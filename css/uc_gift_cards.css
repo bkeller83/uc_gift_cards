@@ -1,0 +1,377 @@
+/**
+ * CSS Styles for UC Gift Cards
+ */
+
+/* Product Pages - goes into global.css */
+div#activate-gift-card {
+    border: 1px solid #620c0c;
+    margin: 5px;
+    padding: 5px;
+    text-align: center;
+    font-size: 1.3em;
+}
+div#activate-gift-card a:link {
+    font-size: 1.3em;
+}
+#activate-gift-card:hover > span.gc-click {
+    color: red;
+}
+div#activate-gift-card a:hover {
+    color: red;
+}
+div#activate-gift-card span.gc-click {
+    font-size: 1em;
+}
+
+/* We want links in error messages to be visible... */
+div.messages.error a {
+    color: blue;
+    text-decoration: underline;
+}
+
+/* Table Captions */
+caption {
+    font-size: 2em;
+    line-height: 2em;
+}
+
+/* All Gift Cards Admin Table */
+table#gift-cards-admin-table tr.even,
+table#gift-cards-admin-table tr.odd {
+    background-color: #FFF;
+    border: 1px solid #AAA;
+}
+table#gift-cards-admin-table tr.even:hover,
+table#gift-cards-admin-table tr.odd:hover {
+    background-color: #E1E2DC;
+}
+table#gift-cards-admin-table .gc-sortable {
+    color: blue;
+    cursor: pointer;
+}
+/* Gift Card Details */
+div.gc-details {
+    font-size: 1.2em;
+    line-height: 1.5em;
+    margin-top: 2px;
+    border: 1px solid #ccc;
+    padding: 2px 0 2px 2px;    
+}
+span.gc-details-label {
+    font-weight: bold;
+    color: #620c0c;
+}
+div.gc-code-details {
+    font-size: 1.2em;
+    line-height: 1.5em;
+    margin-top: 2px;
+    padding: 2px 0 2px 2px;    
+}
+div#owner-info,
+div#purchaser-info {
+    float: left;
+    width: 45%;
+    margin: 0 2%;
+    
+}
+div.gc-operations {
+    clear: both;
+}
+div.gc-operations h2 {
+    font-size: 1.8em;
+    font-weight: normal;
+}
+.gc-link {
+    margin-left: 15px;
+    font-size: 1.1em;
+}
+span.gc-code-span {
+    color: #888;
+}
+
+/* User Transaction View */
+div.gc-code h3 {
+    font-size: 1.5em;
+    margin: 5px 0;
+}
+span.gc-code-span {
+    font-size: inherit;
+}
+table#uc-gift-cards-transactions caption {
+    font-size: 1.8em;
+}
+fieldset#edit-add-card-user,
+fieldset#edit-archive,
+fieldset#edit-pin-set {
+    border: 1px solid #ccc;
+    height: auto;
+    padding: 2em 10px 10px;
+    position: relative;
+    margin: 1em 0
+}
+fieldset#edit-add-card-user .fieldset-legend,
+fieldset#edit-archive .fieldset-legend,
+fieldset#edit-pin-set .fieldset-legend {
+    margin-top: 0.5em; 
+    padding-left: 15px;
+    position: absolute;
+    text-transform: uppercase;
+    font-weight: bold;
+}
+fieldset#edit-add-card-user .fieldset-legend:hover,
+fieldset#edit-archive .fieldset-legend:hover,
+fieldset#edit-pin-set .fieldset-legend:hover {
+    text-decoration: underline
+}
+
+/* Limit size of Textareas */
+textarea#edit-message {
+    width: 600px;
+    font-size: 1.2em;
+}
+
+/* Increase font Size in Textareas */
+textarea#edit-uc-gift-cards-email-code-message,
+textarea#edit-uc-gift-cards-email-code-purchaser {
+    font-size: 1.2em;
+}
+/* Settings Admin Page */
+div#edit-uc-gift-cards-site label,
+div#edit-uc-gift-cards-code-length label, 
+div.form-item-email-message-value label, 
+div.form-item-email-purchaser-value label {
+    font-size: 1.2em;
+    line-height: 2em;
+}
+body.page-admin-store-settings-gift-cards div.text-format-wrapper div.description {
+    font-size: 1.2em;
+    color: #000;
+    padding: 1em;
+    border: 1px solid;
+    margin: 0 0 2em;;
+}
+fieldset#edit-email-message-format,
+fieldset#edit-email-purchaser-format {
+    background-color: #eee
+}
+
+/** CSS Loader **/
+#floatingBarsG {
+    position:relative;
+    width:62px;
+    height:77px;
+    margin: 0 auto;
+}
+
+.blockG {
+    position:absolute;
+    background-color:#D67969;
+    width:10px;
+    height:24px;
+    -moz-border-radius:8px 8px 0 0;
+    -moz-transform:scale(0.4);
+    -moz-animation-name:fadeG;
+    -moz-animation-duration:0.64s;
+    -moz-animation-iteration-count:infinite;
+    -moz-animation-direction:linear;
+    -webkit-border-radius:8px 8px 0 0;
+    -webkit-transform:scale(0.4);
+    -webkit-animation-name:fadeG;
+    -webkit-animation-duration:0.64s;
+    -webkit-animation-iteration-count:infinite;
+    -webkit-animation-direction:linear;
+    -ms-border-radius:8px 8px 0 0;
+    -ms-transform:scale(0.4);
+    -ms-animation-name:fadeG;
+    -ms-animation-duration:0.64s;
+    -ms-animation-iteration-count:infinite;
+    -ms-animation-direction:linear;
+    -o-border-radius:8px 8px 0 0;
+    -o-transform:scale(0.4);
+    -o-animation-name:fadeG;
+    -o-animation-duration:0.64s;
+    -o-animation-iteration-count:infinite;
+    -o-animation-direction:linear;
+    border-radius:8px 8px 0 0;
+    transform:scale(0.4);
+    animation-name:fadeG;
+    animation-duration:0.64s;
+    animation-iteration-count:infinite;
+    animation-direction:linear;
+}
+
+#rotateG_01 {
+    left:0;
+    top:28px;
+    -moz-animation-delay:0.24000000000000005s;
+    -moz-transform:rotate(-90deg);
+    -webkit-animation-delay:0.24000000000000005s;
+    -webkit-transform:rotate(-90deg);
+    -ms-animation-delay:0.24000000000000005s;
+    -ms-transform:rotate(-90deg);
+    -o-animation-delay:0.24000000000000005s;
+    -o-transform:rotate(-90deg);
+    animation-delay:0.24000000000000005s;
+    transform:rotate(-90deg);
+}
+
+#rotateG_02 {
+    left:8px;
+    top:10px;
+    -moz-animation-delay:0.32s;
+    -moz-transform:rotate(-45deg);
+    -webkit-animation-delay:0.32s;
+    -webkit-transform:rotate(-45deg);
+    -ms-animation-delay:0.32s;
+    -ms-transform:rotate(-45deg);
+    -o-animation-delay:0.32s;
+    -o-transform:rotate(-45deg);
+    animation-delay:0.32s;
+    transform:rotate(-45deg);
+}
+
+#rotateG_03{
+    left:26px;
+    top:3px;
+    -moz-animation-delay:0.4s;
+    -moz-transform:rotate(0deg);
+    -webkit-animation-delay:0.4s;
+    -webkit-transform:rotate(0deg);
+    -ms-animation-delay:0.4s;
+    -ms-transform:rotate(0deg);
+    -o-animation-delay:0.4s;
+    -o-transform:rotate(0deg);
+    animation-delay:0.4s;
+    transform:rotate(0deg);
+}
+
+#rotateG_04{
+    right:8px;
+    top:10px;
+    -moz-animation-delay:0.4800000000000001s;
+    -moz-transform:rotate(45deg);
+    -webkit-animation-delay:0.4800000000000001s;
+    -webkit-transform:rotate(45deg);
+    -ms-animation-delay:0.4800000000000001s;
+    -ms-transform:rotate(45deg);
+    -o-animation-delay:0.4800000000000001s;
+    -o-transform:rotate(45deg);
+    animation-delay:0.4800000000000001s;
+    transform:rotate(45deg);
+}
+
+#rotateG_05{
+    right:0;
+    top:28px;
+    -moz-animation-delay:0.56s;
+    -moz-transform:rotate(90deg);
+    -webkit-animation-delay:0.56s;
+    -webkit-transform:rotate(90deg);
+    -ms-animation-delay:0.56s;
+    -ms-transform:rotate(90deg);
+    -o-animation-delay:0.56s;
+    -o-transform:rotate(90deg);
+    animation-delay:0.56s;
+    transform:rotate(90deg);
+}
+
+#rotateG_06{
+    right:8px;
+    bottom:7px;
+    -moz-animation-delay:0.64s;
+    -moz-transform:rotate(135deg);
+    -webkit-animation-delay:0.64s;
+    -webkit-transform:rotate(135deg);
+    -ms-animation-delay:0.64s;
+    -ms-transform:rotate(135deg);
+    -o-animation-delay:0.64s;
+    -o-transform:rotate(135deg);
+    animation-delay:0.64s;
+    transform:rotate(135deg);
+}
+
+#rotateG_07{
+    bottom:0;
+    left:26px;
+    -moz-animation-delay:0.72s;
+    -moz-transform:rotate(180deg);
+    -webkit-animation-delay:0.72s;
+    -webkit-transform:rotate(180deg);
+    -ms-animation-delay:0.72s;
+    -ms-transform:rotate(180deg);
+    -o-animation-delay:0.72s;
+    -o-transform:rotate(180deg);
+    animation-delay:0.72s;
+    transform:rotate(180deg);
+}
+
+#rotateG_08{
+    left:8px;
+    bottom:7px;
+    -moz-animation-delay:0.8s;
+    -moz-transform:rotate(-135deg);
+    -webkit-animation-delay:0.8s;
+    -webkit-transform:rotate(-135deg);
+    -ms-animation-delay:0.8s;
+    -ms-transform:rotate(-135deg);
+    -o-animation-delay:0.8s;
+    -o-transform:rotate(-135deg);
+    animation-delay:0.8s;
+    transform:rotate(-135deg);
+}
+
+div.css-rotator-text {
+  font-size:3em;
+  text-align:center;
+  padding:10%;
+  margin:5%;
+  border:2px solid red;
+}
+
+
+
+@-moz-keyframes fadeG{
+    0%{
+    background-color:#620C0C
+    }
+    100%{
+    background-color:#D67969
+    }
+}
+
+@-webkit-keyframes fadeG{
+    0%{
+    background-color:#620C0C
+    }
+    100%{
+    background-color:#D67969
+    }
+}
+
+@-ms-keyframes fadeG{
+    0%{
+    background-color:#620C0C
+    }
+    100%{
+    background-color:#D67969
+    }
+}
+
+@-o-keyframes fadeG{
+    0%{
+    background-color:#620C0C
+    }
+    100%{
+    background-color:#D67969
+    }
+}
+
+@keyframes fadeG{
+    0%{
+    background-color:#620C0C
+    }
+    100%{
+    background-color:#D67969
+    }
+}
+/** End of CSS loader **/

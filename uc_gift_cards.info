@@ -1,0 +1,10 @@
+name = UC Gift Cards
+description = "Manages Gift Cards for Ubercart"
+package = Custom
+core = 7.x
+configure = admin/store/settings/gift_cards
+files[] = uc_gift_cards.module
+files[] = includes/uc_gift_cards.giftcards.inc
+ 
+dependencies[] = uc_varprice
+version = "7.x-1.0"

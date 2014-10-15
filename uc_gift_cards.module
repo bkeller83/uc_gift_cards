@@ -1,0 +1,709 @@
+<?php
+
+/**
+ * @file
+ * Provides Gift Cards for Ubercart.
+ *
+ * Version: 1.0
+ * Drupal Core: 7.x
+ * Ubercart Core: 3.x
+ * 
+ * Code by Bruce Keller (bruce@bandrdesigns.com)
+ * 
+ * Things this module needs to do:
+ *  - connect to DB and create a new GC entry
+ *  - email GC recipient
+ *  - Hook into the cart and provide a new payment method
+ *  - provide a method of checking GC balances
+ *  - Handle transactions using the GC as a payment method
+ *  @todo if a card code is added and order goes to abandoned WITHOUT customer using the 'Cancel'
+ *        button, the amount will not get credited back to the card
+ *  @todo send email reminders to <someone> if a card is unused for amount of time
+ *  @todo generate reports? Sales, usage, credits outstanding?
+ *  @todo Create a function to archive (set as inactive) cards that have a balance of zero and no user that is registered to a site
+ *        These would be cards that were used without the customer relating the card to their site account
+ * 
+ */
+// Load dependant files and library
+function uc_gift_cards_init() {
+  require_once 'includes/uc_gift_cards.db.inc';
+  require_once 'includes/uc_gift_cards.config.inc';
+  require_once 'includes/uc_gift_cards.tokens.inc';
+  drupal_add_library('uc_gift_cards', 'uc_gift_cards');
+}
+
+/**
+ * Implements hook_permission()
+ */
+function uc_gift_cards_permission() {
+  return array(
+    'administer gift cards' => array(
+      'title' => t('Administer Gift Cards'),
+      'description' => t('View and Update/Edit Gift Cards')
+    ),
+    'delete gift cards' => array(
+      'title' => t('Delete Gift Cards'),
+      'description' => t('Delete Gift Cards from the database.')
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu()
+ * 
+ */
+function uc_gift_cards_menu() {
+  $items = array();
+  $items['admin/store/gift_cards'] = array(
+    'title' => 'Gift Cards',
+    'type' => MENU_NORMAL_ITEM,
+    'page callback' => '_uc_gift_cards_admin',
+    'file' => 'uc_gift_cards.admin.inc',
+    'access arguments' => array('administer gift cards'),
+    'access callback' => TRUE,
+    'weight' => 0,
+  );
+  $items['gift-cards/activate'] = array(
+    'title' => 'Activate Gift Card',
+    'type' => MENU_NORMAL_ITEM,
+    'page callback' => '_uc_gift_cards_activate',
+    'file' => 'uc_gift_cards.activate.inc',
+    'access arguments' => array('access content'),
+    'access callback' => TRUE
+  );
+  $items['admin/store/settings/gift_cards'] = array(
+    'title' => 'Gift Card Settings',
+    'type' => MENU_NORMAL_ITEM,
+    'description' => 'Set config options.',
+    'page callback' => 'drupal_get_form',
+    'file' => 'uc_gift_cards.admin.inc',
+    'page arguments' => array('uc_gift_cards_settings_form'),
+    'access arguments' => array('administer gift cards'),
+    'access callback' => TRUE,
+  );
+  $items['admin/store/gift_cards/%uc_gift_card_id'] = array(
+    'title' => 'View this Gift Card',
+    'description' => 'View Gift Card details.',
+    'page callback' => 'uc_gift_card_code_view',
+    'page arguments' => array(3),
+    'access arguments' => array('administer gift cards'),
+    'type' => MENU_CALLBACK,
+    'file' => 'uc_gift_cards.admin.inc',
+  );
+  $items['admin/store/gift_cards/new'] = array(
+    'title' => 'Create New Gift Card',
+    'description' => 'Create a New Gift Card.',
+    'page callback' => 'uc_gift_cards_create_new',
+    'page arguments' => array(3),
+    'access arguments' => array('administer gift cards'),
+    'type' => MENU_CALLBACK,
+    'file' => 'uc_gift_cards.admin.inc',
+  );
+  $items['user/%user/gift_cards'] = array(
+    'title' => 'Gift Cards',
+    'description' => 'View your Gift Cards.',
+    'page callback' => 'uc_gift_cards_user_view',
+    'access callback' => 'uc_gift_cards_access_callback',
+    'page arguments' => array(1),
+    'access arguments' => array(1),
+    'type' => MENU_LOCAL_TASK,
+    'file' => 'uc_gift_cards.admin.inc',
+    'weight' => 5,
+  );
+  $items['user/%user/gift_cards/%uc_gift_card_id'] = array(
+    'title' => 'Gift Card Transactions',
+    'description' => 'Displays transactions for a Gift Card',
+    'page callback' => 'uc_gift_cards_user_transactions',
+    'access callback' => 'uc_gift_cards_user_access_callback',
+    'page arguments' => array(1, 3),
+    'access arguments' => array(1),
+    'type' => MENU_LOCAL_TASK,
+    'file' => 'uc_gift_cards.admin.inc',
+    'weight' => 6,
+  );
+  return $items;
+}
+
+/**
+ * Access callback for user/%user/gift_cards
+ *  Allows a user to see their own Gift Cards, or users with Perm Administer Users to see all
+ * @param $account
+ *  The user object for current user
+ * 
+ * @return 
+ *  True or False - granting or deying access 
+ */
+function uc_gift_cards_access_callback($account) {
+  global $user;
+  if (user_access('administer users') || $account->uid == $user->uid) {
+    return TRUE;
+  }
+  return FALSE;
+}
+
+function uc_gift_cards_user_access_callback($account) {
+  global $user;
+  if ($account->uid == $user->uid) {
+    return TRUE;
+  }
+  return FALSE;
+}
+
+/**
+ * Properly handle %uc_gift_card_id wildcard.
+ * (Necessary to prevent PHP runtime notice.)
+ */
+function uc_gift_card_id_to_arg($arg) {
+  return $arg;
+}
+
+function uc_gift_card_id_load($code) {
+  return $code;
+}
+
+/**
+ * Implements hook_library().
+ *  Adds CSS and JS files.
+ */
+function uc_gift_cards_library() {
+  $path = drupal_get_path('module', 'uc_gift_cards');
+  $items = array();
+  $items['uc_gift_cards'] = array(
+    'title' => 'UC Gift Cards',
+    'version' => '1.0-1.x-dev',
+    'css' => array(
+      $path . '/css/uc_gift_cards.css' => array(),
+    ),
+    'js' => array(
+      $path . '/js/uc_gift_cards.js' => array()
+    )
+  );
+  return $items;
+}
+
+/**
+ * Implements hook_uc_order().
+ * 
+ * Check our orders and see if we need to generate a GC code
+ * @todo add in a $arg2=='canceled' to cancel gift card added?
+ */
+function uc_gift_cards_uc_order($op, &$order, $arg2) {
+  // gets order balance 
+  $balance = (int) uc_payment_balance($order);
+  /** @todo May need to change $arg2 to paid? but we need arg2 to force it to run this only once * */
+  if ($op == 'update' && $balance == 0 && $arg2 == 'completed') {
+    // check for the presence of a GC and run our creation/emailing code?
+    foreach ($order->products as $key => &$product) {
+      if ($product->model == 'gift-card' && isset($product->data['gift_code']) && $product->data['gift_code'] == 0) {
+        // We have a GC in this order where the gift code has not been set
+        // Need to generate a new GiftCard and enter it into the GC DB and set gift_code = 1
+        // Create a new Gift Card based on product qty
+        for ($i = 0; $i < (int) $product->qty; $i++) {
+          $gift_card = new GiftCard();
+          $code = $gift_card->genCode();
+          $gift_card->setCode($code);
+          $gift_card->setOrderNumber($product->order_id);
+          $gift_card->setPurchaseAmount($product->price);
+          $gift_card->setBalance($product->price);
+          $gift_card->setPurchaseDate($order->created);
+          $purchaser = array('uid' => $order->uid, 'email' => $order->primary_email);
+          $gift_card->setPurchaser($purchaser);
+          $gift_card->setSite();
+          $gift_card->setOwner($product->data['attributes']);
+          $gift_card->setActive(1);
+
+          /** Save to database * */
+          $gift_card->saveNew();
+          // Log the Gift Card Code to the Order Log
+          $changes = array('gift-card' => 'Gift Card Code ' . $code . ' generated in the amount of $' . $product->price);
+          uc_order_log_changes($product->order_id, $changes);
+          // Create Transaction 
+          uc_gift_cards_create_transaction($gift_card->getID(), $product->order_id, $product->price, 'Created', "Gift Card created from order number $product->order_id.");
+          // Email the owner
+          if (isset($product->data['attributes']['Message'][0])) {
+            $message = $product->data['attributes']['Message'][0];
+          } else {
+            $message = NULL;
+          }
+          uc_gift_cards_email_code($gift_card, $message);
+        }
+        // Mark this GC as being created
+        $product->data['gift_code'] = 1;
+      }
+    }
+    // Save the changes to gift_code
+    uc_order_save($order);
+  } 
+  
+  /* If the customer adds a GC, then goes back into the store and makes a change to the order
+   * the GC gets removed from line items. So we'll check the $_SESSION against the $order 
+   * line items and add the GC back in if needed...
+   */
+ elseif ($op == 'presave') {
+    // Verify order and user are the same
+    if (_uc_gift_cards_is_checkout_order($order)) {
+      dpm($order);
+      dpm($_SESSION);
+      // This will be used to track the total discount from gift cards
+      $gift_cards_total = 0;
+      // Get our session and check for gift cards
+      if ($_SESSION['uc_gift_cards']) {
+        $session_gift_cards = $_SESSION['uc_gift_cards'];
+        // Check each session gift card
+        foreach ($session_gift_cards as $key => $card) {
+          $session_gift_cards[$key]['line_item'] = FALSE;
+          $gift_cards_total .= $card['amount'];
+          // against each line item	
+          foreach ($order->line_items as $line_item) {
+            if ($line_item['type'] === 'gift_card') {
+              if ($line_item['data']['id'] === $card['id']) {
+                $session_gift_cards[$key]['line_item'] = TRUE;
+              }
+            }
+          }
+        }
+      }
+      dpm($gift_cards_total);
+      foreach ($session_gift_cards as $card) {
+        // Now we see which ones need to be added back in as line items
+        if ($card['line_item'] === FALSE) {
+          // Add Gift Card Line Item
+          $line_weight = count($order->line_items) - 2;
+          $data = array('id' => $card['id'], 'amount' => $card['amount']);
+          uc_order_line_item_add($order->order_id, 'gift_card', 'Gift Card ' . $card['code'], -1 * $card['amount'], $line_weight, $data);        
+        }
+      }
+    }  
+  }
+}
+
+/**
+ * Implements hook_uc_add_to_cart_data()
+ * @param type $form_values
+ * @return array
+ *  Adds the gift_code data attribute to our product array if the node id is UC_GIFT_CARDS_NODE_ID (Gift Card)
+ */
+function uc_gift_cards_uc_add_to_cart_data($form_values) {
+  if ($form_values['nid'] == UC_GIFT_CARDS_NODE_ID) {
+    return array('gift_code' => 0);
+  }
+}
+
+/**
+ * Implements hook_uc_checkout_pane()
+ */
+function uc_gift_cards_uc_checkout_pane() {
+  $panes[] = array(
+    'id' => 'gift_card',
+    'title' => t('Gift Card'),
+    'desc' => t('Provides customers with the option to apply a Gift Card to their order.'),
+    'callback' => 'uc_gift_cards_pane_checkout',
+    'process' => TRUE,
+    'weight' => 7,
+    'shippable' => FALSE
+  );
+  return $panes;
+}
+
+/**
+ * Checkout Pane Function - Form Builder
+ */
+function uc_gift_cards_pane_checkout($op, $order, $form = NULL, &$form_state = NULL) {
+  if ($op == 'view') {
+    $description = t('If you have a Gift Card, enter the code here to apply it towards your order balance.');
+    $contents['gift_code'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Gift Card Code'),
+      '#name' => 'gift_code',
+      '#maxlength' => UC_GIFT_CARDS_CODE_LENGTH,
+      '#size' => UC_GIFT_CARDS_CODE_LENGTH * 2
+    );
+    $contents['pin'] = array(
+      '#type' => 'password',
+      '#title' => t('Enter your PIN.'),
+      '#name' => 'pin',
+      '#maxlength' => 4,
+      '#size' => 8,
+    );
+    $contents['gift_card_display'] = array(
+      '#type' => 'button',
+      '#value' => t('Display Gift Card Balance'),
+      '#name' => 'gift-card-display',
+      '#limit_validation_errors' => array(array('gift_code', 'pin')),
+      '#submit' => array('uc_gift_card_balance_callback'),
+      '#ajax' => array(
+        'callback' => 'uc_gift_card_balance_callback',
+        'wrapper' => 'gift-card-balance',
+        'event' => 'click'
+      ),
+    );
+    $contents['gift_card_balance'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Gift Card Balance'),
+      '#prefix' => '<div id="gift-card-balance">',
+      '#suffix' => '</div>',
+      '#disabled' => TRUE,
+      '#size' => 8,
+    );
+    $contents['gift_card_balance_apply'] = array(
+      '#type' => 'button',
+      '#value' => t('Apply to Order'),
+      '#name' => 'gift-card-apply',
+      '#limit_validation_errors' => array(
+        array('gift_code', 'pin'),
+        array('gift_card_balance'),
+      ),
+      '#submit' => array('uc_gift_card_apply_callback'),
+      '#ajax' => array(
+        'callback' => 'uc_gift_card_apply_callback',
+        'wrapper' => 'gift-card-balance',
+        'event' => 'click'
+      ),
+    );
+    return array('description' => $description, 'contents' => $contents);
+  }
+}
+
+/**
+ * Callback to check Gift Card Balance
+ *  Displays the balance and provides a button to apply the balance or less to the order total
+ *  Or if code or pin invalid, displays error message
+ * @todo Cant get the damn thing to work with having form['gift_card_balance'] as an editable field
+ * so for now it will apply the total amount of the card to the order, user can not change it at this time
+ */
+function uc_gift_card_balance_callback($form, &$form_state) {
+  // Rebuild our form so we can return it
+  $form['gift_card_balance'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Gift Card Balance'),
+    '#prefix' => '<div id="gift-card-balance">',
+    '#suffix' => '</div>',
+    '#disabled' => TRUE,
+    '#size' => 8,
+  );
+
+  // Validate there are values for code and pin
+  if (empty($form_state['input']['gift_code']) || empty($form_state['input']['pin'])) {
+    form_set_error('gift_code', t('Please enter a Gift Card Code and PIN.'));
+    $form_state['rebuild'] = TRUE;
+
+    return $form['gift_card_balance'];
+  }
+  // Grab and sanitize our variables 
+  $code = strtoupper(check_plain($form_state['input']['gift_code']));
+  $pin = check_plain($form_state['input']['pin']);
+  // More validation
+  if (strlen($code) != UC_GIFT_CARDS_CODE_LENGTH) {
+    form_set_error('gift_code', t('Gift Card Code should be ' . UC_GIFT_CARDS_CODE_LENGTH . ' characters.'));
+    return $form['gift_card_balance'];
+  }
+  if (!is_numeric($pin) || intval($pin) != $pin || strlen($pin) != 4) {
+    form_set_error('gift_code', t('Gift Card PIN should be a 4 number code.'));
+    return $form['gift_card_balance'];
+  }
+
+  // Query the DB for this code
+  $gift_card = uc_gift_cards_get_from_db($code);
+  // Check our results
+  if ($gift_card == FALSE) {
+    // No results found in DB
+    //dpm($gift_card);
+    form_set_error('gift_card_balance', t('Gift Card Code Not Found'));
+  } elseif (!$gift_card->isPinSet()) {
+    // PIN not Set - Return an error
+    form_set_error('gift_card_balance', t('This Gift Card needs to be <a href="/gift-cards/activate">Activated</a> before it can be used!'));
+  } elseif ($gift_card->validatePin($pin) === TRUE) {
+    /** @todo still not checking the stored email address - anyone that has a code and PIN can use it at checkout * */
+    // Code and PIN are valid - get the balance
+    $balance = $gift_card->getBalance();
+
+    // Enter it in our form
+    $form['gift_card_balance']['#value'] = $balance;
+  } else {
+    // Code was valid, PIN was not
+    form_set_error('gift_card_balance', t('Gift Card PIN incorrect.'));
+  }
+  return $form['gift_card_balance'];
+}
+
+/**
+ * Applies gift card amount to the order 
+ *  Rechecks code and pin to get gift card balance again
+ */
+function uc_gift_card_apply_callback(&$form, &$form_state) {
+  // Reset form element for error messages
+  $form['gift_card_balance'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Gift Card Balance'),
+    '#prefix' => '<div id="gift-card-balance">',
+    '#suffix' => '</div>',
+    '#size' => 8,
+  );
+  /* Get our form values */
+  $order_total = $form_state['build_info']['args'][0]->order_total; // returns float
+  $line_items = $form_state['build_info']['args'][0]->line_items; // returns an array of line items
+  $order_id = $form_state['build_info']['args'][0]->order_id;
+
+  // Get our code and pin 
+  $code = strtoupper(check_plain($form_state['input']['gift_code']));
+  $pin = check_plain($form_state['input']['pin']);
+  // Query the DB for this code
+  $gift_card = uc_gift_cards_get_from_db($code);
+  // Verify everything again
+  if ($gift_card == FALSE) { // No results found in DB
+    form_set_error('gift_card_balance', t('Gift Card Code Not Found'));
+    return $form['gift_card_balance'];
+  }
+  // Ensure the PIN is Set
+  if (!$gift_card->isPinSet()) {
+    form_set_error('gift_card_balance', t('This Gift Card needs to be <a href="/gift-card/activate">Activated</a> before it can be used!'));
+    return $form['gift_card_balance'];
+  }
+  // Check our PIN
+  if ($gift_card->validatePin($pin) === FALSE) {
+    form_set_error('gift_card_balance', t('PIN did not match.'));
+    return $form['gift_card_balance'];
+  }
+  // We have a valid code and pin
+  $gift_card_balance = $gift_card->getBalance();
+  
+  // Ensure balance is > 0
+  if ($gift_card_balance <= 0) {
+	form_set_error('gift_card_balance', t('I\'m sorry, but this card has a zero balance on it!'));
+    return $form['gift_card_balance'];  
+  }
+
+  // Check to see if balance is > order total
+  if ($gift_card_balance > $order_total) {
+    $amount_used = $order_total;
+  } else {
+    $amount_used = $gift_card_balance;
+  }
+
+  // Create our Gift Card Line Item
+  $line_weight = count($line_items) - 2;
+  $data = array('id' => $gift_card->getID(), 'amount' => $amount_used);
+  uc_order_line_item_add($order_id, 'gift_card', 'Gift Card ' . $code, -1 * $amount_used, $line_weight, $data);
+
+  // Update balance of card
+  $new_balance = $gift_card_balance - $amount_used;
+  $dbh = pdoConnect();
+  $stmt = $dbh->prepare('UPDATE gift_cards SET balance = :balance WHERE id = :id');
+  $stmt->execute(array(
+    ':balance' => $new_balance,
+    ':id' => $gift_card->getID()
+  ));
+  // Create transaction record
+  global $user;
+  if ($user->uid) {
+    $userID = $user->uid;
+  } else {
+    $userID = NULL;
+  }
+  uc_gift_cards_create_transaction($gift_card->getID(), $order_id, $amount_used, 'Debit', 'Amount applied to order in checkout.');
+  
+  // Add Gift Card to $_SESSION
+  $_SESSION['uc_gift_cards'][] = array('id' => $gift_card->getID(), 'code' => $gift_card->getCode(), 'amount' => round($amount_used, 2));
+  
+  $commands = array();
+  $commands[] = ajax_command_replace('#payment-pane', drupal_render($form['panes']['payment']));
+  $commands[] = ajax_command_after('#gift-card-balance', '<div class="messages status">$' . round($amount_used, 2) . ' from Gift Card ' . $code . ' subtracted from order total.</div>' );
+  // Reload page to update payment method for paid in full order
+  if ($amount_used == $order_total) {
+    /* ctools dependency forces page reload */
+    ctools_include('ajax');
+    ctools_add_js('ajax-responder');
+    // Adds the css rotator
+    $html = '<div class="css-rotator-text">Order paid in full!<br>Updating status and reloading....
+  <div id="floatingBarsG">
+    <div class="blockG" id="rotateG_01"></div>
+    <div class="blockG" id="rotateG_02"></div>
+    <div class="blockG" id="rotateG_03"></div>
+    <div class="blockG" id="rotateG_04"></div>
+    <div class="blockG" id="rotateG_05"></div>
+    <div class="blockG" id="rotateG_06"></div> 
+    <div class="blockG" id="rotateG_07"></div>
+    <div class="blockG" id="rotateG_08"></div>
+  </div>
+Please continue checkout when page is reloaded!</div>';
+    $commands[] = ajax_command_replace('#gift-card-balance', $html);
+    $commands[] = ctools_ajax_command_reload();
+	drupal_set_message(t('$' . round($amount_used, 2) . ' from Gift Card ' . $code . ' applied to order total. Please continue the checkout process!'));
+  }
+  return array('#type' => 'ajax', '#commands' => $commands);
+}
+
+/**
+ * Implements hook_line_item()
+ */
+function uc_gift_cards_uc_line_item() {
+  $items[] = array(
+    'id' => 'gift_card',
+    'title' => t('Gift Card'),
+    'weight' => 0,
+    'stored' => TRUE,
+    'default' => FALSE,
+    'calculated' => TRUE,
+    'add_list' => TRUE,
+  );
+  return $items;
+}
+
+/**
+ * Adds custom callback to the Cancel button
+ */
+function uc_gift_cards_form_uc_cart_checkout_form_alter(&$form, &$form_state, $form_id) {
+  $form['actions']['cancel']['#submit'][] = 'uc_gift_cards_checkout_cancel';
+  return $form;
+}
+
+/**
+ * Checks order line items for Gift Cards
+ *  Called when the 'cancel' button is pressed from uc_cart_checkout_form
+ *  Refunds Gift Card usage amount to the card and creates transaction record
+ */
+function uc_gift_cards_checkout_cancel($form, $form_state) {
+  // Unset the session variable
+  unset($_SESSION['uc_gift_cards']);
+  $line_items = $form_state['build_info']['args'][0]->line_items; // returns an array of line items
+  $order_id = $form_state['build_info']['args'][0]->order_id;
+  foreach ($line_items as $item) {
+    if ($item['type'] == 'gift_card') {
+      // We have a Gift Card that needs to be refunded
+      $card_id = $item['data']['id'];
+      $amount = $item['data']['amount'];
+      $dbh = pdoConnect();
+      // Get current balance
+      $stmt = $dbh->prepare('SELECT balance FROM gift_cards WHERE id = :id');
+      $stmt->execute(array(':id' => $card_id));
+      $result = $stmt->fetch();
+      $balance = $result['balance'];
+      $new_balance = $balance + $amount;
+      // Add the amount back to the balance
+      $stmt = $dbh->prepare('UPDATE gift_cards SET balance = :balance WHERE id = :id');
+      $stmt->execute(array(
+        ':balance' => $new_balance,
+        ':id' => $card_id
+      ));
+      // Create a transaction record
+      global $user;
+      if ($user->uid) {
+        $userID = $user->uid;
+      } else {
+        $userID = NULL;
+      }
+      uc_gift_cards_create_transaction($card_id, $order_id, $amount, 'Credit', 'Order cancelled by customer.');
+    }
+  }
+}
+
+/**
+ * Email Gift Card Code to the owner
+ * @todo Totally different actions for purchaser email rather than owner?
+ */
+function uc_gift_cards_email_code($gift_card, $message = NULL) {
+  $site_name = variable_get('site_name', '');
+  $uc_site_name = UC_GIFT_CARDS_SITE_NAME;
+  $owner_emails = $gift_card->getOwnerEmail();
+  if ($owner_emails == FALSE) {
+    // Email the code to the purchaser
+    $to = $gift_card->getPurchaserEmail();
+    $params['subject'] = 'Gift Card Code from ' . $site_name;
+    $message_body = variable_get('uc_gift_cards_email_code_purchaser', '');
+  } else {
+    // Email the code to the owner/gifted recipient
+    $to = $owner_emails[$uc_site_name];
+    $params['subject'] = 'You have a ' . $site_name . ' Gift Card!';
+    $message_body = variable_get('uc_gift_cards_email_code_message', '');
+    // Include the message if one is present
+    if ($message) {
+      $message_body .= '<p>Here\'s a little note to go with your card!<br>' . $message . '</p>';
+    }
+  }
+  // Set the rest of our vars
+  $message_body = token_replace($message_body, array('gift_card' => $gift_card));
+  $key = 'send_gift_card_code';
+  $from = $site_name . ' <' . variable_get('uc_store_email', '') . '>';
+  $lang = language_default();
+  $params['body'] = $message_body;
+  // Send email 
+  drupal_mail('uc_gift_cards', $key, $to, $lang, $params, $from);
+}
+
+/**
+ * Implements hook_mail().
+ */
+function uc_gift_cards_mail($key, &$message, $params) {
+  $message['headers']['Content-Type'] = 'text/html; charset=UTF-8;';
+  $message['subject'] = $params['subject'];
+  $message['body'][] = $params['body'];
+}
+
+/**
+ * Mail class for sending HTML emails
+ */
+class UCGiftCardsMailSystem extends DefaultMailSystem {
+
+  public function format(array $message) {
+    $message['body'] = implode("\n\n", $message['body']);
+    $message['body'] = drupal_wrap_mail($message['body']);
+    return $message;
+  }
+
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter()
+ * If the Gift Card leaves a balance on the order that is less than the tax + shipping, then
+ * we end up with a negative for the item total to make the balance work out. This simply lumps
+ * the amounts owed all into the item field before passing it off to PayPal. Tax and shipping just
+ * won't show up in the PayPal invoice, just the amount left for them to pay.
+ */
+function uc_gift_cards_form_uc_paypal_wps_form_alter(&$form, &$form_state, $form_id) {
+  if ((float)$form['amount_1']['#value'] < 0) {	
+    $tax = (float)$form['tax_cart']['#value'];
+    $shipping = (float)$form['handling_cart']['#value'];	
+    $items = (float)$form['amount_1']['#value'];
+	// Set the Items total to whatever the balance is
+	$form['amount_1']['#value'] = $items + $tax + $shipping;
+	// Set the shipping and tax to zero
+	$form['tax_cart']['#value'] = '0.00';
+	$form['handling_cart']['#value'] = '0.00';
+	return $form;
+  }
+}
+
+/**
+ * Check whether an order is the order being checked out by the current user.
+ * @param $order
+ */
+function _uc_gift_cards_is_checkout_order($order) {
+  global $user;
+  return isset($_SESSION['cart_order'])
+    && isset($order->order_id)
+    && $order->order_id == $_SESSION['cart_order']
+    && uc_order_status_data($order->order_status, 'state') == 'in_checkout'
+    && $user->uid == $order->uid;
+}
+
+
+
+/**
+ * Implements hook_user_update().
+ * 
+ * @todo If a user updates their email address, we want to update our record also
+ 
+function uc_gift_cards_user_update(&$edit, $account, $category) {
+  if ($edit['mail'] != $edit['original']->mail) {
+    // They have changed their email address. 
+    $email_new = $edit['mail'];
+    $email_old = $edit['original']->mail;
+    // Look for gift_card users with this site and the NEW email address first
+    dpm($edit); // $edit['mail'] == the new email address; $edit['original']->mail == old email
+    dpm($account); // $account->mail == new email address; $account->init == old email address old is also in $account->original->mail
+    dpm($category); // $category == 'account'
+
+    
+  }
+}
+*/

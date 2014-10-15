@@ -1,0 +1,21 @@
+<?php
+
+/**
+ * @file UC Gift Cards - Installation file.
+ */
+
+// Allows us to modify the Drupal Mail system and send HTML emails
+// http://drupal.stackexchange.com/questions/27063/how-to-send-html-email/27103#27103
+
+function uc_gift_cards_enable() {
+  $current = variable_get('mail_system', array('default-system' => 'DefaultMailSystem'));
+  $addition = array('uc_gift_cards' => 'UCGiftCardsMailSystem');
+  variable_set('mail_system', array_merge($current, $addition));
+}
+
+function uc_gift_cards_disable() {
+  $mail_system = variable_get('mail_system', array('default-system' => 'DefaultMailSystem'));
+  unset($mail_system['uc_gift_cards']);
+  variable_set('mail_system', $mail_system);
+}
+

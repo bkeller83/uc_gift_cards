@@ -1,0 +1,3 @@
+#Ignore configuration files
+includes/uc_gift_cards_db.config.inc
+includes/uc_gift_cards.config.inc

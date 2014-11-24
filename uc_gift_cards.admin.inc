@@ -13,7 +13,6 @@
  * forms and adding markup.
  */
 function _uc_gift_cards_admin() {
-  //drupal_add_library('uc_gift_cards', 'uc_gift_cards');
   // Display all gift cards in a table?
   $markup = '<h1>Gift Cards Administration</h1>';
   // Display Active/Inactive Link
@@ -94,7 +93,7 @@ function _uc_gift_cards_admin() {
 }
 
 /**
- * Admin Page  Search Form Builder
+ * Admin Page Search Form Builder
  */
 function uc_gift_cards_admin_search_form($form, &$form_state) {
   $form['card_search'] = array(
@@ -685,14 +684,18 @@ function uc_gift_cards_settings_form() {
     '#description' => t('This is the message that is sent to the purchaser ONLY if no recipient email was entered. The Gift Card code will be sent here instead.'),
     '#wysiwyg' => TRUE,
   );
-    
+  $form['preview_email'] = array(
+    '#type' => 'item',
+	'#value' => t('Preview Emails'),
+	'#markup' => '<a id="gift-cards-emails" href="/admin/store/settings/gift_cards/emails" target="_blank">Preview Emails</a>',
+	);    
   if (module_exists('token')) {
     $form['email_purchaser']['#description'] .= ' ' . t('You may use any of the following replacement patterns.');
     $form['email_purchaser']['#suffix'] = theme('token_tree', array('token_types' => array('uc_gift_cards')));
   }
   $form['submit'] = array(
     '#type' => 'submit',
-    '#value' => t('Save Changes'),
+    '#value' => t('Save Settings'),
     '#submit' => array('uc_gift_cards_settings_form_callback'),
     '#ajax' => array('wrapper' => 'uc-gift-cards-settings-form')
   ); 
@@ -1147,4 +1150,45 @@ function uc_gift_cards_admin_delete_card_callback($form, &$form_state) {
   watchdog('uc_gift_cards', "Gift Card $code with an id of $gift_card_id deleted by user $user->name");
   drupal_set_message(t("Gift Card $code deleted."));
   drupal_goto('/admin/store/gift_cards/');
+}
+
+/*
+ * Callback function to preview emails
+ * @return $content
+ *   Page content to be displayed in admin/store/settings/gift_cards/emails
+ */
+function uc_gift_cards_preview_emails() {
+  // Create a fake Gift Card so we can pass stuff to the tokens
+  $gift_card = new GiftCard();
+  $code = 'TEST99';
+  $gift_card->setCode($code);
+  $gift_card->setOrderNumber(9999);
+  $gift_card->setPurchaseAmount(99.99);
+  $gift_card->setBalance(99.99);
+  $gift_card->purchaser = 45; // Note! This must be set to the id of an actual user for this site!!
+  $gift_card->setSite();
+  $gift_card->setActive(1);
+  	
+  $markup = '';	
+  $recipient_email = variable_get('uc_gift_cards_email_code_message', '');
+  $purchaser_email = variable_get('uc_gift_cards_email_code_purchaser', '');
+  // Replace tokens
+  $recipient_email = token_replace($recipient_email, array('gift_card' => $gift_card));
+  $purchaser_email = token_replace($purchaser_email, array('gift_card' => $gift_card));
+  
+  $markup .= '<!doctype html><head></head><body>';
+  $markup .= '<p id="gift-cards-emails-desc">Below you will see examples of the emails that are sent out. The tokens should be replaced with values in the below emails. '
+  		     .  'If they are not, then there is an issue! Try clearing all caches and reload. Note that for the FROM token to work, there '
+			 .  'must be a valid user id in the function that generates this page:<br>uc_gift_cards.admin.inc -> function uc_gift_cards_preview_emails()</p>';
+  $markup .= '<h2>Recipient Email</h2>';
+  $markup .= "<div id='recipient-email'>$recipient_email</div>";
+  $markup .= '<h2>Purchaser Email</h2>';
+  $markup .= "<div id='purchaser-email'>$purchaser_email</div>";
+  $markup .= '</body></html>';	
+	
+  $content['raw_markup'] = array(
+    '#type' => 'markup',
+    '#markup' => $markup
+  );
+  return $content;
 }

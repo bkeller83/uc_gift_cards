@@ -81,6 +81,15 @@ function uc_gift_cards_menu() {
     'access arguments' => array('administer gift cards'),
     'access callback' => TRUE,
   );
+  $items['admin/store/settings/gift_cards/emails'] = array(
+    'title' => 'Preview Emails',
+    'type' => MENU_CALLBACK,
+    'description' => 'Preview emails sent.',
+    'page callback' => 'uc_gift_cards_preview_emails',
+    'file' => 'uc_gift_cards.admin.inc',
+    'access arguments' => array('administer gift cards'),
+    'access callback' => TRUE,
+  );
   $items['admin/store/gift_cards/%uc_gift_card_id'] = array(
     'title' => 'View this Gift Card',
     'description' => 'View Gift Card details.',
@@ -170,7 +179,7 @@ function uc_gift_cards_library() {
   $items = array();
   $items['uc_gift_cards'] = array(
     'title' => 'UC Gift Cards',
-    'version' => '1.0-1.x-dev',
+    'version' => '1.0',
     'css' => array(
       $path . '/css/uc_gift_cards.css' => array(),
     ),
@@ -190,8 +199,13 @@ function uc_gift_cards_library() {
 function uc_gift_cards_uc_order($op, &$order, $arg2) {
   // gets order balance 
   $balance = (int) uc_payment_balance($order);
-  /** @todo May need to change $arg2 to paid? but we need arg2 to force it to run this only once * */
-  if ($op == 'update' && $balance == 0 && $arg2 == 'completed') {
+  /** 
+   * This sucks, but in order for this to hit when admin enters a payment, there can be no $arg2 check
+   * because none is passed. This results in this getting called on every order load, which is a lot
+   * heavier than I wanted to use...     //if ($op == 'update' && $balance == 0 && $arg2 == 'completed') {
+   * Added the order_status check to prevent it from hitting while still in checkout (obviously)
+   */
+  if ($op == 'load' && $order->order_status != 'in_checkout' && $balance == 0) {
     // check for the presence of a GC and run our creation/emailing code?
     foreach ($order->products as $key => &$product) {
       if ($product->model == 'gift-card' && isset($product->data['gift_code']) && $product->data['gift_code'] == 0) {
@@ -235,45 +249,100 @@ function uc_gift_cards_uc_order($op, &$order, $arg2) {
     uc_order_save($order);
   } 
   
-  /* If the customer adds a GC, then goes back into the store and makes a change to the order
+  /* 
+   * Ensure that Session Gift Card data is present in line item data
+   * Also needs to be sure that the Gift Cards applied is not now > than the total of the order
+   * If the customer adds a GC, then goes back into the store and makes a change to the order
    * the GC gets removed from line items. So we'll check the $_SESSION against the $order 
    * line items and add the GC back in if needed...
    */
- elseif ($op == 'presave') {
+ elseif ($op == 'presave' && isset($_SESSION['uc_gift_cards'])) {
     // Verify order and user are the same
     if (_uc_gift_cards_is_checkout_order($order)) {
-      dpm($order);
-      dpm($_SESSION);
       // This will be used to track the total discount from gift cards
       $gift_cards_total = 0;
       // Get our session and check for gift cards
-      if ($_SESSION['uc_gift_cards']) {
-        $session_gift_cards = $_SESSION['uc_gift_cards'];
-        // Check each session gift card
-        foreach ($session_gift_cards as $key => $card) {
-          $session_gift_cards[$key]['line_item'] = FALSE;
-          $gift_cards_total .= $card['amount'];
-          // against each line item	
-          foreach ($order->line_items as $line_item) {
-            if ($line_item['type'] === 'gift_card') {
-              if ($line_item['data']['id'] === $card['id']) {
-                $session_gift_cards[$key]['line_item'] = TRUE;
-              }
+      $session_gift_cards = $_SESSION['uc_gift_cards'];
+      // Check each session gift card
+      foreach ($session_gift_cards as $key => $card) {
+        $session_gift_cards[$key]['line_item'] = FALSE;
+        $gift_cards_total = $gift_cards_total + $card['amount'];
+        // against each line item	
+        foreach ($order->line_items as $line_item) {
+          if ($line_item['type'] === 'gift_card') {
+            if ($line_item['data']['id'] === $card['id']) {
+              // This session GC is present in our line items
+              $session_gift_cards[$key]['line_item'] = TRUE;
             }
           }
         }
       }
-      dpm($gift_cards_total);
-      foreach ($session_gift_cards as $card) {
-        // Now we see which ones need to be added back in as line items
-        if ($card['line_item'] === FALSE) {
-          // Add Gift Card Line Item
-          $line_weight = count($order->line_items) - 2;
-          $data = array('id' => $card['id'], 'amount' => $card['amount']);
-          uc_order_line_item_add($order->order_id, 'gift_card', 'Gift Card ' . $card['code'], -1 * $card['amount'], $line_weight, $data);        
+      // Now we need to get the sub total of line items without gift cards
+      $line_item_subtotal = 0;
+      foreach ($order->line_items as $line_item) {
+        if ($line_item['type'] != 'gift_card') {
+          $line_item_subtotal += $line_item['amount']; 
         }
       }
-    }  
+      $my_order_total = $line_item_subtotal - $gift_cards_total;
+    
+      // If there are no missing GC from the line item, skip all the crap below
+      // So lets check...
+      $uc_gift_card_missing_line_item = FALSE;
+      foreach ($session_gift_cards as $card) {
+        if ($card['line_item'] === FALSE) {
+          $uc_gift_card_missing_line_item = TRUE;
+        }
+      }
+      // Now only run the below code if there is a missing GC from line items
+      // AND if the calculated order total is not less than zero
+      if ($uc_gift_card_missing_line_item === TRUE && $my_order_total >= 0) {
+        foreach ($session_gift_cards as $card) {
+          // Now we see which ones need to be added back in as line items
+          if ($card['line_item'] === FALSE) {
+            // Check to see if GC amount is > order total
+            // Add Gift Card Line Item
+            $line_weight = count($order->line_items) - 2;
+            $data = array('id' => $card['id'], 'amount' => $card['amount']);
+            uc_order_line_item_add($order->order_id, 'gift_card', 'Gift Card ' . $card['code'], -1 * $card['amount'], $line_weight, $data);        
+          }
+        } 
+      } elseif ($uc_gift_card_missing_line_item === TRUE && $my_order_total < 0) {
+        // We don't want to put the GC back into the line items, but need to credit the GC,
+        // create a transaction, and notify the customer with a message.
+        $dbh = pdoConnect();
+        foreach ($session_gift_cards as $card) {
+          if ($card['line_item'] === FALSE) {
+            $card_id = $card['id'];
+            $amount = $card['amount'];
+            $code = $card['code'];
+            // Get current balance
+            $stmt = $dbh->prepare('SELECT balance FROM gift_cards WHERE id = :id');
+            $stmt->execute(array(':id' => $card_id));
+            $result = $stmt->fetch();
+            $balance = $result['balance'];
+            $new_balance = $balance + $amount;
+            // Add the amount back to the balance
+            $stmt = $dbh->prepare('UPDATE gift_cards SET balance = :balance WHERE id = :id');
+            $stmt->execute(array(
+              ':balance' => $new_balance,
+              ':id' => $card_id
+            ));
+            // Create a transaction record
+            global $user;
+            if ($user->uid) {
+              $userID = $user->uid;
+            } else {
+              $userID = NULL;
+            }
+            uc_gift_cards_create_transaction($card_id, $order->order_id, $amount, 'Credit', 'Gift Card amount applied to order is greater than order total.');
+            drupal_set_message("Gift Card amount applied to order is greater than the order total. Your Gift Card $code has been credited back $" . round($amount, 2) . '.');
+          }
+        }
+        // Unset the Session
+        unset($_SESSION['uc_gift_cards']);
+      }
+    } 
   }
 }
 
@@ -368,7 +437,7 @@ function uc_gift_cards_pane_checkout($op, $order, $form = NULL, &$form_state = N
  * Callback to check Gift Card Balance
  *  Displays the balance and provides a button to apply the balance or less to the order total
  *  Or if code or pin invalid, displays error message
- * @todo Cant get the damn thing to work with having form['gift_card_balance'] as an editable field
+ * @todo Can't get the damn thing to work with having form['gift_card_balance'] as an editable field
  * so for now it will apply the total amount of the card to the order, user can not change it at this time
  */
 function uc_gift_card_balance_callback($form, &$form_state) {
@@ -407,7 +476,6 @@ function uc_gift_card_balance_callback($form, &$form_state) {
   // Check our results
   if ($gift_card == FALSE) {
     // No results found in DB
-    //dpm($gift_card);
     form_set_error('gift_card_balance', t('Gift Card Code Not Found'));
   } elseif (!$gift_card->isPinSet()) {
     // PIN not Set - Return an error
@@ -493,6 +561,7 @@ function uc_gift_card_apply_callback(&$form, &$form_state) {
     ':balance' => $new_balance,
     ':id' => $gift_card->getID()
   ));
+  
   // Create transaction record
   global $user;
   if ($user->uid) {
@@ -503,7 +572,12 @@ function uc_gift_card_apply_callback(&$form, &$form_state) {
   uc_gift_cards_create_transaction($gift_card->getID(), $order_id, $amount_used, 'Debit', 'Amount applied to order in checkout.');
   
   // Add Gift Card to $_SESSION
-  $_SESSION['uc_gift_cards'][] = array('id' => $gift_card->getID(), 'code' => $gift_card->getCode(), 'amount' => round($amount_used, 2));
+  $_SESSION['uc_gift_cards'][] = array(
+    'id' => $gift_card->getID(), 
+    'code' => $gift_card->getCode(), 
+    'amount' => round($amount_used, 2),
+    'order_id' => $order_id,
+    );
   
   $commands = array();
   $commands[] = ajax_command_replace('#payment-pane', drupal_render($form['panes']['payment']));
@@ -562,12 +636,12 @@ function uc_gift_cards_form_uc_cart_checkout_form_alter(&$form, &$form_state, $f
  *  Called when the 'cancel' button is pressed from uc_cart_checkout_form
  *  Refunds Gift Card usage amount to the card and creates transaction record
  */
-function uc_gift_cards_checkout_cancel($form, $form_state) {
+function uc_gift_cards_checkout_cancel($form, $form_state) { 
   // Unset the session variable
   unset($_SESSION['uc_gift_cards']);
   $line_items = $form_state['build_info']['args'][0]->line_items; // returns an array of line items
   $order_id = $form_state['build_info']['args'][0]->order_id;
-  foreach ($line_items as $item) {
+  foreach ($line_items as $key => $item) {
     if ($item['type'] == 'gift_card') {
       // We have a Gift Card that needs to be refunded
       $card_id = $item['data']['id'];
@@ -585,14 +659,23 @@ function uc_gift_cards_checkout_cancel($form, $form_state) {
         ':balance' => $new_balance,
         ':id' => $card_id
       ));
-      // Create a transaction record
+	  
+	  // Remove it from the line items
+	  $data = array('id' => $item['data']['id'], 'amount' => 0);
+	  uc_order_update_line_item($item['line_item_id'], $item['title'], 0, $data);
+	  
+	  // Log the Gift Card Code to the Order Log
+      $changes = array('gift-card' => 'Order canceled by customer. $' . $item['data']['amount'] . ' from ' . $item['title'] . ' removed from order and refunded to card.');
+      uc_order_log_changes($order_id, $changes);
+      
+	  // Create a transaction record
       global $user;
       if ($user->uid) {
         $userID = $user->uid;
       } else {
         $userID = NULL;
       }
-      uc_gift_cards_create_transaction($card_id, $order_id, $amount, 'Credit', 'Order cancelled by customer.');
+      uc_gift_cards_create_transaction($card_id, $order_id, $amount, 'Credit', 'Order canceled by customer.');
     }
   }
 }
@@ -686,6 +769,14 @@ function _uc_gift_cards_is_checkout_order($order) {
     && $user->uid == $order->uid;
 }
 
+/**
+ * Implements hook_uc_checkout_complete()
+ *   Removes the GC data from the session for obvious reasons...
+ */
+function uc_gift_cards_uc_checkout_complete($order, $account) {
+  // Unset the Session
+  unset($_SESSION['uc_gift_cards']);
+}
 
 
 /**

@@ -20,7 +20,7 @@ function pdoConnect() {
     return $dbh;
   }
   
-  /**
+/**
  * Function to get a gift card object from the database
  * 
  * @param $code

@@ -205,7 +205,7 @@ function uc_gift_cards_uc_order($op, &$order, $arg2) {
    * heavier than I wanted to use...     //if ($op == 'update' && $balance == 0 && $arg2 == 'completed') {
    * Added the order_status check to prevent it from hitting while still in checkout (obviously)
    */
-  if ($op == 'load' && $order->order_status != 'in_checkout' && $balance == 0) {
+  if ($op == 'load' && $order->order_status != 'in_checkout' && $order->order_status != 'abandoned' && $balance == 0) {
     // check for the presence of a GC and run our creation/emailing code?
     foreach ($order->products as $key => &$product) {
       if ($product->model == 'gift-card' && isset($product->data['gift_code']) && $product->data['gift_code'] == 0) {

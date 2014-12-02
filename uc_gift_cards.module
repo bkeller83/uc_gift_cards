@@ -197,6 +197,9 @@ function uc_gift_cards_library() {
  * @todo add in a $arg2=='canceled' to cancel gift card added?
  */
 function uc_gift_cards_uc_order($op, &$order, $arg2) {
+  if ($order->order_status != 'payment_received') { 
+    return;
+  }
   // gets order balance 
   $balance = (int) uc_payment_balance($order);
   /** 
@@ -206,12 +209,14 @@ function uc_gift_cards_uc_order($op, &$order, $arg2) {
    * Added the order_status check to prevent it from hitting while still in checkout (obviously)
    */
   if ($op == 'load' && $order->order_status != 'in_checkout' && $order->order_status != 'abandoned' && $balance == 0) {
+    $uc_gift_card_save_order = FALSE;
     // check for the presence of a GC and run our creation/emailing code?
     foreach ($order->products as $key => &$product) {
       if ($product->model == 'gift-card' && isset($product->data['gift_code']) && $product->data['gift_code'] == 0) {
         // We have a GC in this order where the gift code has not been set
         // Need to generate a new GiftCard and enter it into the GC DB and set gift_code = 1
         // Create a new Gift Card based on product qty
+        $uc_gift_card_save_order = TRUE;
         for ($i = 0; $i < (int) $product->qty; $i++) {
           $gift_card = new GiftCard();
           $code = $gift_card->genCode();
@@ -245,8 +250,10 @@ function uc_gift_cards_uc_order($op, &$order, $arg2) {
         $product->data['gift_code'] = 1;
       }
     }
-    // Save the changes to gift_code
-    uc_order_save($order);
+    // Save the changes to gift_code if an GC was generated
+      if ($uc_gift_card_save_order === TRUE) {
+        uc_order_save($order);
+      }
   } 
   
   /* 
